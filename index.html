@@ -71,19 +71,19 @@
 
 <!-- Firebase SDK -->
 <script type="module">
+    // Added 'getDoc' to check for existing votes
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, setDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, setDoc, doc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     // PASTE YOUR FIREBASE CONFIG HERE
     const firebaseConfig = {
-        apiKey: "AIzaSyC8OeryiXqGNQDDTkdcno9rsJEilefS3ms",
-        authDomain: "uni-voting-28caf.firebaseapp.com",
-        projectId: "uni-voting-28caf",
-        storageBucket: "uni-voting-28caf.firebasestorage.app",
-        messagingSenderId: "518329499222",
-        appId: "1:518329499222:web:fa70c563196c49724ac5f7"
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT.appspot.com",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
     };
-
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -92,26 +92,26 @@
     const dynamicOptions = document.getElementById('dynamicOptions');
     const submitBtn = document.getElementById('submitBtn');
 
+    // DEFINE YOUR UNIVERSITY EMAIL DOMAIN HERE
+    const UNIVERSITY_DOMAIN = "@student.university.edu";
+
     // 1. LIMIT SELECTIONS TO 2 & TOGGLE TEXT BOXES
     form.addEventListener('change', (e) => {
         if (e.target.name === 'candidate') {
             const checkedBoxes = document.querySelectorAll('input[name="candidate"]:checked');
             
-            // If they try to check a 3rd box, uncheck it and warn them
             if (checkedBoxes.length > 2) {
                 e.target.checked = false;
                 alert("You can only select exactly 2 candidates.");
                 return;
             }
 
-            // Toggle Write-in 1 text box
             if (e.target.id === 'other1Checkbox') {
                 const input = document.getElementById('newCandidate1');
                 input.classList.toggle('hidden', !e.target.checked);
                 input.required = e.target.checked;
             }
 
-            // Toggle Write-in 2 text box
             if (e.target.id === 'other2Checkbox') {
                 const input = document.getElementById('newCandidate2');
                 input.classList.toggle('hidden', !e.target.checked);
@@ -120,7 +120,7 @@
         }
     });
 
-    // 2. REAL-TIME LISTENER: Watch for new candidates added by others
+    // 2. REAL-TIME LISTENER
     const candidatesCollection = collection(db, "customCandidates");
     onSnapshot(candidatesCollection, (snapshot) => {
         dynamicOptions.innerHTML = ''; 
@@ -136,57 +136,67 @@
         });
     });
 
-    // 3. SUBMIT VOTES TO DATABASE
+    // 3. SUBMIT VOTES TO DATABASE WITH RESTRICTIONS
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         
+        const email = document.getElementById('email').value.trim().toLowerCase();
+        
+        // RESTRICTION 1: Check if email ends with the correct university domain
+        if (!email.endsWith(UNIVERSITY_DOMAIN)) {
+            alert(`You must use your official university email ending in ${UNIVERSITY_DOMAIN} to vote.`);
+            return;
+        }
+
         const checkedBoxes = document.querySelectorAll('input[name="candidate"]:checked');
         
-        // Final validation: Ensure exactly 2 are checked
         if (checkedBoxes.length !== 2) {
             alert("Please select exactly 2 candidates before submitting.");
             return;
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerText = "Submitting...";
-        
-        const email = document.getElementById('email').value.trim();
-        let finalSelections = [];
+        submitBtn.innerText = "Checking records...";
         
         try {
+            // RESTRICTION 2: Check if this email has already voted
+            const voteDocRef = doc(db, "votes", email);
+            const docSnap = await getDoc(voteDocRef);
+
+            if (docSnap.exists()) {
+                alert("A vote has already been submitted using this email address.");
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Submit Vote (2 selected)";
+                return;
+            }
+
+            submitBtn.innerText = "Submitting...";
+            let finalSelections = [];
+            
             // Process the 2 checked boxes
             for (const box of checkedBoxes) {
                 if (box.value === 'Other1') {
                     const name1 = document.getElementById('newCandidate1').value.trim();
                     finalSelections.push(name1);
-                    
-                    // Add this new name to the shared public pool
                     const safeId1 = name1.toLowerCase().replace(/[^a-z0-9]/g, '');
                     await setDoc(doc(db, "customCandidates", safeId1), { name: name1 });
-                    
                 } else if (box.value === 'Other2') {
                     const name2 = document.getElementById('newCandidate2').value.trim();
                     finalSelections.push(name2);
-                    
-                    // Add this new name to the shared public pool
                     const safeId2 = name2.toLowerCase().replace(/[^a-z0-9]/g, '');
                     await setDoc(doc(db, "customCandidates", safeId2), { name: name2 });
-                    
                 } else {
-                    // Normal predefined or synced candidate
                     finalSelections.push(box.value);
                 }
             }
 
-            // Save the actual vote cast by this email
-            await addDoc(collection(db, "votes"), {
+            // Save the vote, using the email as the unique document ID
+            await setDoc(voteDocRef, {
                 email: email,
-                votedFor: finalSelections, // Now saves an array of 2 names
+                votedFor: finalSelections,
                 timestamp: new Date()
             });
 
-            // Show success message
             form.classList.add('hidden');
             document.getElementById('successMessage').classList.remove('hidden');
 
