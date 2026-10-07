@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Program Representative Election</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        .container { background: #f9f9f9; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .note { font-size: 0.9em; color: #666; font-style: italic; margin-bottom: 20px; }
+        label { display: block; margin: 10px 0; cursor: pointer; }
+        input[type="email"], input[type="text"] { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .write-in-input { margin-left: 25px; width: calc(100% - 25px); margin-bottom: 10px; }
+        button { display: block; width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        .hidden { display: none; }
+        .candidate-list { margin: 20px 0; }
+        .new-option-badge { background: #ffeb3b; font-size: 0.8em; padding: 2px 6px; border-radius: 4px; margin-left: 10px; }
+        .instruction { font-weight: bold; color: #d9534f; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Study Program Representative Election</h1>
+    
+    <form id="electionForm">
+        <label for="email"><strong>Student Email:</strong></label>
+        <input type="email" id="email" required placeholder="name@student.university.edu">
+
+        <div class="candidate-list">
+            <p class="note">* Adrien and Levani are listed as defaults because they were the representatives last semester.</p>
+            
+            <div id="checkboxContainer">
+                <!-- Defaults -->
+                <label>
+                    <input type="checkbox" name="candidate" value="Adrien Ricciardi"> Adrien Ricciardi
+                </label>
+                <label>
+                    <input type="checkbox" name="candidate" value="Levani Tchikaidze"> Levani Tchikaidze
+                </label>
+            </div>
+            
+            <!-- Real-time options injected here -->
+            <div id="dynamicOptions"></div>
+
+            <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+
+            <!-- Write-in 1 -->
+            <label>
+                <input type="checkbox" name="candidate" value="Other1" id="other1Checkbox"> Write-in a new candidate...
+            </label>
+            <input type="text" id="newCandidate1" class="hidden write-in-input" placeholder="First and Last Name">
+
+            <!-- Write-in 2 -->
+            <label>
+                <input type="checkbox" name="candidate" value="Other2" id="other2Checkbox"> Write-in a second new candidate...
+            </label>
+            <input type="text" id="newCandidate2" class="hidden write-in-input" placeholder="First and Last Name">
+        </div>
+
+        <button type="submit" id="submitBtn">Submit Vote (2 selected)</button>
+    </form>
+
+    <div id="successMessage" class="hidden" style="color: green; text-align: center; margin-top: 20px;">
+        <h3>Thank you! Your votes have been recorded.</h3>
+    </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, setDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // PASTE YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "AIzaSyC8OeryiXqGNQDDTkdcno9rsJEilefS3ms",
+        authDomain: "uni-voting-28caf.firebaseapp.com",
+        projectId: "uni-voting-28caf",
+        storageBucket: "uni-voting-28caf.firebasestorage.app",
+        messagingSenderId: "518329499222",
+        appId: "1:518329499222:web:fa70c563196c49724ac5f7"
+    };
+
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const form = document.getElementById('electionForm');
+    const dynamicOptions = document.getElementById('dynamicOptions');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // 1. LIMIT SELECTIONS TO 2 & TOGGLE TEXT BOXES
+    form.addEventListener('change', (e) => {
+        if (e.target.name === 'candidate') {
+            const checkedBoxes = document.querySelectorAll('input[name="candidate"]:checked');
+            
+            // If they try to check a 3rd box, uncheck it and warn them
+            if (checkedBoxes.length > 2) {
+                e.target.checked = false;
+                alert("You can only select exactly 2 candidates.");
+                return;
+            }
+
+            // Toggle Write-in 1 text box
+            if (e.target.id === 'other1Checkbox') {
+                const input = document.getElementById('newCandidate1');
+                input.classList.toggle('hidden', !e.target.checked);
+                input.required = e.target.checked;
+            }
+
+            // Toggle Write-in 2 text box
+            if (e.target.id === 'other2Checkbox') {
+                const input = document.getElementById('newCandidate2');
+                input.classList.toggle('hidden', !e.target.checked);
+                input.required = e.target.checked;
+            }
+        }
+    });
+
+    // 2. REAL-TIME LISTENER: Watch for new candidates added by others
+    const candidatesCollection = collection(db, "customCandidates");
+    onSnapshot(candidatesCollection, (snapshot) => {
+        dynamicOptions.innerHTML = ''; 
+        
+        snapshot.forEach((doc) => {
+            const candidateName = doc.data().name;
+            const label = document.createElement('label');
+            label.innerHTML = `
+                <input type="checkbox" name="candidate" value="${candidateName}"> 
+                ${candidateName} <span class="new-option-badge">Added by student</span>
+            `;
+            dynamicOptions.appendChild(label);
+        });
+    });
+
+    // 3. SUBMIT VOTES TO DATABASE
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const checkedBoxes = document.querySelectorAll('input[name="candidate"]:checked');
+        
+        // Final validation: Ensure exactly 2 are checked
+        if (checkedBoxes.length !== 2) {
+            alert("Please select exactly 2 candidates before submitting.");
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Submitting...";
+        
+        const email = document.getElementById('email').value.trim();
+        let finalSelections = [];
+        
+        try {
+            // Process the 2 checked boxes
+            for (const box of checkedBoxes) {
+                if (box.value === 'Other1') {
+                    const name1 = document.getElementById('newCandidate1').value.trim();
+                    finalSelections.push(name1);
+                    
+                    // Add this new name to the shared public pool
+                    const safeId1 = name1.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    await setDoc(doc(db, "customCandidates", safeId1), { name: name1 });
+                    
+                } else if (box.value === 'Other2') {
+                    const name2 = document.getElementById('newCandidate2').value.trim();
+                    finalSelections.push(name2);
+                    
+                    // Add this new name to the shared public pool
+                    const safeId2 = name2.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    await setDoc(doc(db, "customCandidates", safeId2), { name: name2 });
+                    
+                } else {
+                    // Normal predefined or synced candidate
+                    finalSelections.push(box.value);
+                }
+            }
+
+            // Save the actual vote cast by this email
+            await addDoc(collection(db, "votes"), {
+                email: email,
+                votedFor: finalSelections, // Now saves an array of 2 names
+                timestamp: new Date()
+            });
+
+            // Show success message
+            form.classList.add('hidden');
+            document.getElementById('successMessage').classList.remove('hidden');
+
+        } catch (error) {
+            console.error("Error adding document: ", error);
+            alert("There was an error submitting your vote. Please check your internet and try again.");
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Submit Vote (2 selected)";
+        }
+    });
+</script>
+
+</body>
+</html>
